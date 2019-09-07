@@ -1,0 +1,7 @@
+C:\Users\Omar\VisualSudioProjects\OSCSGO\bin\Debug\OSCSGO.exe.config
+C:\Users\Omar\VisualSudioProjects\OSCSGO\bin\Debug\OSCSGO.exe
+C:\Users\Omar\VisualSudioProjects\OSCSGO\bin\Debug\OSCSGO.pdb
+C:\Users\Omar\VisualSudioProjects\OSCSGO\obj\Debug\OSCSGO.csprojAssemblyReference.cache
+C:\Users\Omar\VisualSudioProjects\OSCSGO\obj\Debug\OSCSGO.csproj.CoreCompileInputs.cache
+C:\Users\Omar\VisualSudioProjects\OSCSGO\obj\Debug\OSCSGO.exe
+C:\Users\Omar\VisualSudioProjects\OSCSGO\obj\Debug\OSCSGO.pdb
