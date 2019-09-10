@@ -7,56 +7,75 @@ namespace OSCSGO
 {
     public class CSharpMemoryManager
     {
+        public string processName;
+        public string moduleName;
         public Process process;
         public IntPtr handle;
 
-        public CSharpMemoryManager(String processName)
+        public CSharpMemoryManager(string processName, string moduleName)
         {
-            this.handle = Initialize(processName);
+            this.processName = processName;
+            this.moduleName = moduleName;
         }
 
         /*
-         * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-         * ------------------------------------------------------------- WinAPI --------------------------------------------------------------------
-         *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-         */
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern IntPtr OpenProcess(
-            int dwDesiredAccess,
-            bool bInheritHandle,
-            int dwProcessId
-        );
-
-        [DllImport("kernal32.dll", SetLastError = true)]
-        public static extern Int32 CloseHandle(IntPtr hObject);
+        * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        * ------------------------------------------------------------- WinAPI --------------------------------------------------------------------
+        *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        */
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool ReadProcessMemory(
-            IntPtr hProcess,
-            IntPtr lpBaseAddress,
-            [Out] byte[] lpbuffer,
-            int dwSize,
-            out IntPtr lpNumberOfBytesReas);
+        public static extern IntPtr OpenProcess(int dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, [Out] byte[] lpbuffer, int dwSize, out IntPtr lpNumberOfBytesReas);
 
         [DllImport("kernel32.dll")]
-        static extern bool WriteProcessMemory(
-            IntPtr hProcess,
-            IntPtr lpBaseAddress,
-            byte[] lpBuffer,
-            int dwSize,
-            out IntPtr lpNumberOfBytesWritten);
+        static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, int dwSize, out IntPtr lpNumberOfBytesWritten);
+
         /*
         *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         * ---------------------------------------------------------- Capture Process ---------------------------------------------------------------
         *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         */
+        //returns the list of all processes with the given name
 
-        private IntPtr Initialize(String processName)
+        public IntPtr GetBaseModule()
         {
-            return GetHandle(GetProcessByName(processName));
+            //attempt to get the process
+            try
+            {
+                Process process = GetProcessByName(this.processName)[0];
+                this.process = process;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+            }
+            
+            //get the desired module
+            IntPtr baseAddress = IntPtr.Zero;
+            foreach (ProcessModule module in process.Modules)
+            {
+                if (module.ModuleName.Contains(this.moduleName))
+                {
+                    baseAddress = module.BaseAddress;
+                    break;
+                }
+            }
+
+            if (baseAddress == IntPtr.Zero)
+            {
+                Console.WriteLine("module name not found");
+                return IntPtr.Zero;
+            }
+
+            //open the handle to the process module
+            this.handle = GetHandle(this.process);
+
+            return baseAddress;
         }
 
-        //returns the list of all processes with the given name
         private Process[] GetProcessByName(string processName)
         {
             Process[] myProcess = null;
@@ -76,7 +95,7 @@ namespace OSCSGO
             return myProcess;
         }
 
-        public IntPtr GetHandle(Process[] capturedProcess)
+        public IntPtr GetHandle(Process capturedProcess)
         {
             IntPtr processHandle = IntPtr.Zero;
             int PROCESS_ALL_ACCESS = (0x1F0FFF);
@@ -90,8 +109,7 @@ namespace OSCSGO
             //attempt to aquire the handle of the captured process
             try
             {
-                processHandle = OpenProcess(PROCESS_ALL_ACCESS, true, capturedProcess[0].Id);
-                process = capturedProcess[0]; 
+                processHandle = OpenProcess(PROCESS_ALL_ACCESS, true, capturedProcess.Id);
                 Console.WriteLine("Handle for process acquired");
             }
             catch (Exception e)
@@ -103,35 +121,13 @@ namespace OSCSGO
             return processHandle;
         }
 
-        public IntPtr GetModuleBaseAddress(string moduleName)
-        {
-            IntPtr baseAddress = IntPtr.Zero; 
-           
-            foreach (ProcessModule module in process.Modules)
-            {
-                if(module.ModuleName.Contains(moduleName))
-                {
-                    baseAddress = module.BaseAddress;
-                    break;
-                }
-            }
-
-            // Attempt to get the base address of the module - Return IntPtr.Zero if the module doesn't exist in the process
-
-            if(baseAddress == IntPtr.Zero)
-            {
-                Console.WriteLine("module name not found");
-                return IntPtr.Zero;
-            }
-
-            return baseAddress;
-        }
 
         /*
          * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
          * ------------------------------------------------------------- Read Memory --------------------------------------------------------------------
          *  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
          */
+
         byte[] ReadMemory(IntPtr address, int size)
         {
             //Prepare buffer and pointer
@@ -161,14 +157,6 @@ namespace OSCSGO
                 Console.WriteLine("Failed to read int, returning default value 0");
                 return 0;
             }
-
-            foreach(byte readByte in data)
-            {
-                Console.Write(readByte + " ");
-            }
-
-            Console.WriteLine("");
-            
 
             return BitConverter.ToInt32(data, 0);
         }
@@ -214,26 +202,28 @@ namespace OSCSGO
             //**********************************************************************
 
             //get the memory manager
-            CSharpMemoryManager manager = new CSharpMemoryManager(processName);
+            CSharpMemoryManager manager = new CSharpMemoryManager(processName, moduleName);
 
             //get the base address
-            IntPtr baseAddress = manager.GetModuleBaseAddress(moduleName);
+            IntPtr baseAddress = manager.GetBaseModule();
 
             Console.WriteLine(moduleName + " base address: " + baseAddress);
 
             //offset to local player memory location
-            int localPlayerAddress = (int) baseAddress + dwLocalPlayer;
+            int localPlayerAddress = manager.ReadInt32(IntPtr.Add(baseAddress, dwLocalPlayer));
 
             //print the new memory location
             Console.WriteLine("Local player memory address: " + localPlayerAddress);
 
-            //slow poll loop
-            while(true)
-            {
-                int health = manager.ReadInt32((IntPtr) (localPlayerAddress + oHealth));
-                Console.WriteLine("Health: " + health);
-                Thread.Sleep(5000);
-            }  
+            IntPtr healthPointer = IntPtr.Add((IntPtr)localPlayerAddress, oHealth);
+
+            //read the player health
+            int health = manager.ReadInt32((IntPtr) healthPointer);
+            Console.WriteLine("Health: " + health);
+
+
+            Thread.Sleep(5000);
+            
         }
     }
 }
